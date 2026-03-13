@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.env
+data/
+*.db
+.turbo/
+apps/scheduler/scripts/debug-*
+.claude/*
+!.claude/CLAUDE.md

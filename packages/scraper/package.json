@@ -1,0 +1,20 @@
+{
+  "name": "@learnus-notifier/scraper",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "check": "biome check src/"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "playwright": "^1.58.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

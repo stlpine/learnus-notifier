@@ -1,0 +1,25 @@
+services:
+  learnus-notifier:
+    image: ghcr.io/stlpine/learnus-notifier:latest
+    container_name: learnus-notifier
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Seoul
+      DB_PATH: /app/data/state.db
+      COOKIES_PATH: /app/data/cookies.json
+
+      # Your Yonsei student ID and portal password
+      LEARNUS_USERNAME: "your_student_id"
+      LEARNUS_PASSWORD: "your_password"
+
+      # Telegram bot token from @BotFather
+      # See README.md → Setup for how to get these two values
+      TELEGRAM_BOT_TOKEN: "123456:ABC-your-bot-token"
+      TELEGRAM_CHAT_ID: "your_telegram_user_id"
+
+      # Optional: "ko" (Korean) or "en" (English). Default: ko
+      NOTIFICATION_LANGUAGE: "ko"
+      # Optional: how often to scrape in minutes. Default: 120
+      POLL_INTERVAL_MINUTES: "120"
+    volumes:
+      - ./data:/app/data

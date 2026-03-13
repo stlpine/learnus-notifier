@@ -1,0 +1,22 @@
+services:
+  learnus-notifier:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: learnus-notifier
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Seoul
+      DB_PATH: /app/data/state.db
+      COOKIES_PATH: /app/data/cookies.json
+
+      # Credentials are loaded from .env (see .env.example)
+      LEARNUS_USERNAME: "${LEARNUS_USERNAME}"
+      LEARNUS_PASSWORD: "${LEARNUS_PASSWORD}"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID}"
+      NOTIFICATION_LANGUAGE: "${NOTIFICATION_LANGUAGE:-ko}"
+      POLL_INTERVAL_MINUTES: "${POLL_INTERVAL_MINUTES:-120}"
+    volumes:
+      # Persists the SQLite database and session cookies across container restarts
+      - ./data:/app/data

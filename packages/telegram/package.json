@@ -1,0 +1,20 @@
+{
+  "name": "@learnus-notifier/telegram",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "check": "biome check src/"
+  },
+  "dependencies": {
+    "@learnus-notifier/db": "workspace:*",
+    "grammy": "^1.41.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

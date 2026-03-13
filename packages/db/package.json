@@ -1,0 +1,20 @@
+{
+  "name": "@learnus-notifier/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "check": "biome check src/"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.17.0",
+    "drizzle-orm": "^0.38.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
