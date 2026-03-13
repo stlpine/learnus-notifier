@@ -2,7 +2,7 @@
 
 Sends Telegram notifications for upcoming assignment due dates and online lecture attendance deadlines on [LearnUS](https://ys.learnus.org) (Yonsei University).
 
-Runs as a Docker container — primarily designed for a Synology NAS but works on any Linux host with Docker.
+Runs as a Docker container on any Linux server with at least 1GB RAM. Chromium (used for scraping) is the main resource constraint — low-memory devices such as entry-level NAS units are not suitable.
 
 ---
 
@@ -26,11 +26,20 @@ Runs as a Docker container — primarily designed for a Synology NAS but works o
 
 > Tip: if the result is empty, send another message to your bot and try again. Alternatively, send `/start` to **@userinfobot** on Telegram — it replies with your chat ID instantly.
 
-### 3. Configure Credentials
+### 3. Provision a Server
 
-> **Security note:** Credentials are stored as plaintext environment variables. This means they are visible to anyone with file access to `compose.yaml` or who can run `docker inspect` on the container. For a personal NAS where you control access this is an acceptable tradeoff, but avoid deploying this on shared infrastructure. Never commit `compose.yaml` with real credentials to a public repository.
+Any Linux server with **1GB+ RAM** works. A free option is **Oracle Cloud Free Tier** — the Always Free ARM instance provides 4 OCPUs and 24GB RAM at no cost.
 
-Open `deploy/compose.yaml` and fill in your values under `environment`:
+Once you have a server, install Docker:
+```bash
+curl -fsSL https://get.docker.com | sh
+```
+
+### 4. Configure Credentials
+
+> **Security note:** Credentials are stored as plaintext environment variables, visible to anyone with file access to `compose.yaml` or who can run `docker inspect`. Never commit `compose.yaml` with real credentials to a public repository.
+
+Copy `deploy/compose.yaml` to your server and fill in your values:
 
 | Variable | Description |
 |---|---|
@@ -41,60 +50,31 @@ Open `deploy/compose.yaml` and fill in your values under `environment`:
 | `NOTIFICATION_LANGUAGE` | `ko` for Korean, `en` for English |
 | `POLL_INTERVAL_MINUTES` | How often to check (default: `120`) |
 
-### 4. Deploy
+### 5. Deploy
 
 The Docker image is built and pushed to `ghcr.io/stlpine/learnus-notifier:latest` automatically by GitHub Actions on every push to `main`.
 
-#### Synology NAS (DSM 7.2+ with Container Manager)
-
-**First-time setup:**
-1. On your NAS, create the project folder:
-   ```bash
-   mkdir -p /volume1/docker/learnus-notifier/data
-   ```
-2. Copy `deploy/compose.yaml` into `/volume1/docker/learnus-notifier/` and fill in your credentials
-
-   The final structure should look like:
-   ```
-   /volume1/docker/learnus-notifier/
-   ├── compose.yaml
-   └── data/
-   ```
-3. Open **Container Manager** → **Project** → **Create** → select `/volume1/docker/learnus-notifier`
-
-**Updating to the latest image:**
-
-In Container Manager, open the project and click **Pull** then **Restart**.
-
-Or via SSH:
+**First-time setup on your server:**
 ```bash
-cd /volume1/docker/learnus-notifier
-docker compose pull && docker compose up -d
-```
+mkdir -p ~/learnus-notifier/data
+scp deploy/compose.yaml user@your-server-ip:~/learnus-notifier/
 
-#### Linux Server (OCI, AWS EC2, etc.)
-
-```bash
-# On the remote instance
-mkdir -p ~/docker/learnus-notifier/data
-scp deploy/compose.yaml user@your-instance-ip:~/docker/learnus-notifier/
-
-ssh user@your-instance-ip
-cd ~/docker/learnus-notifier
+ssh user@your-server-ip
+cd ~/learnus-notifier
 nano compose.yaml          # fill in your credentials
 docker compose up -d
 ```
 
 No inbound ports need to be opened — the container only makes outbound connections to LearnUS and Telegram.
 
-**Updating to the latest image:**
-```bash
-docker compose pull && docker compose up -d
-```
-
-**Check logs (any platform):**
+**Check logs:**
 ```bash
 docker compose logs -f
+```
+
+**Update to the latest image:**
+```bash
+docker compose pull && docker compose up -d
 ```
 
 ---
@@ -134,7 +114,7 @@ All scraper functions (`getCourses`, `getAssignments`, `getLectures`) accept a `
 
 ### Why SQLite?
 
-No separate database server is needed — SQLite is a single file that lives in the `data/` volume alongside the session cookies. It is sufficient for one user's worth of assignment and lecture records, and works well on a NAS where simplicity and low resource usage matter.
+No separate database server is needed — SQLite is a single file that lives in the `data/` volume alongside the session cookies. It is sufficient for one user's worth of assignment and lecture records.
 
 ### Why three notification tiers (72h / 24h / 3h)?
 
@@ -161,7 +141,7 @@ There are two Docker Compose files with different purposes:
 | File | Purpose | Image |
 |---|---|---|
 | `docker-compose.yml` | Local development | Builds from source |
-| `deploy/compose.yaml` | NAS / server deployment | Pulls from ghcr.io |
+| `deploy/compose.yaml` | Server deployment | Pulls from ghcr.io |
 
 For local development, copy `.env.example` to `.env` and fill in your credentials (`.env` is gitignored and never committed):
 

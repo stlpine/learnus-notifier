@@ -40,9 +40,11 @@ packages/
 ## Deployment
 
 - **Image registry:** `ghcr.io/stlpine/learnus-notifier:latest`
-- **CI:** `.github/workflows/docker.yml` — builds and pushes on every push to `main`
-- **NAS deploy file:** `deploy/compose.yaml` — uses `image:` (not `build:`), placed at `/volume1/docker/learnus-notifier/compose.yaml` on the NAS alongside a `data/` directory
+- **CI:** `.github/workflows/ci.yml` — runs lint then builds and pushes on every push to `main`
+- **Deploy file:** `deploy/compose.yaml` — uses `image:` (not `build:`), copied to the server alongside a `data/` directory
 - The root `docker-compose.yml` uses `build:` and is for local development only
+- **Minimum requirement:** 1GB RAM — Chromium is the bottleneck. Entry-level NAS units (e.g. Synology DS221+ with 512MB RAM) are not sufficient.
+- **Recommended free host:** Oracle Cloud Free Tier (Always Free ARM instance: 4 OCPUs, 24GB RAM)
 
 ## Package Dependency Graph
 
