@@ -36,15 +36,23 @@ ENV TZ=Asia/Seoul
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
+
+# Copy compiled output and package manifests for each workspace package.
+# Per-package node_modules must also be copied — pnpm creates symlinks there
+# that Node.js uses to resolve dependencies (e.g. apps/scheduler/node_modules/node-cron).
 COPY --from=builder /app/apps/scheduler/dist ./apps/scheduler/dist
 COPY --from=builder /app/apps/scheduler/package.json ./apps/scheduler/
+COPY --from=builder /app/apps/scheduler/node_modules ./apps/scheduler/node_modules
 COPY --from=builder /app/packages/scraper/dist ./packages/scraper/dist
 COPY --from=builder /app/packages/scraper/package.json ./packages/scraper/
+COPY --from=builder /app/packages/scraper/node_modules ./packages/scraper/node_modules
 COPY --from=builder /app/packages/db/dist ./packages/db/dist
 COPY --from=builder /app/packages/db/package.json ./packages/db/
+COPY --from=builder /app/packages/db/node_modules ./packages/db/node_modules
 COPY --from=builder /app/packages/telegram/dist ./packages/telegram/dist
 COPY --from=builder /app/packages/telegram/package.json ./packages/telegram/
-COPY --from=builder /app/package.json ./
+COPY --from=builder /app/packages/telegram/node_modules ./packages/telegram/node_modules
 
 # Data directory is mounted as a volume at runtime
 RUN mkdir -p /app/data
