@@ -11,7 +11,8 @@
     "test:crawl": "node --env-file=../../.env --import tsx/esm scripts/test-crawl.ts",
     "inspect-login": "node --import tsx/esm scripts/inspect-login.ts",
     "inspect-assignments": "node --env-file=../../.env --import tsx/esm scripts/inspect-assignments.ts",
-    "inspect-lectures": "node --env-file=../../.env --import tsx/esm scripts/inspect-lectures.ts"
+    "inspect-lectures": "node --env-file=../../.env --import tsx/esm scripts/inspect-lectures.ts",
+    "inspect-vod-page": "node --env-file=../../.env --import tsx/esm scripts/inspect-vod-page.ts"
   },
   "dependencies": {
     "@learnus-notifier/db": "workspace:*",

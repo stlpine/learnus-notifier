@@ -7,31 +7,30 @@ const LECTURE_MODULE_TYPES = ["vod", "xncompass", "ubcoll", "zoom", "video"];
 
 /**
  * Scrapes online lecture items from all enrolled course pages.
- * Opens a separate page per course for parallel fetching.
+ * Processes courses sequentially (2 pages per course: listing + attendance report).
  * Deduplicates by module ID (same lecture can appear in multiple course sections).
  */
 export async function getLectures(
   context: BrowserContext,
   courses: Course[],
 ): Promise<Lecture[]> {
-  const results = await Promise.allSettled(
-    courses.map((c) => getLecturesForCourse(context, c)),
-  );
-
   const seen = new Set<string>();
   const all: Lecture[] = [];
-  for (const result of results) {
-    if (result.status === "fulfilled") {
-      for (const lecture of result.value) {
+
+  for (const course of courses) {
+    try {
+      const lectures = await getLecturesForCourse(context, course);
+      for (const lecture of lectures) {
         if (!seen.has(lecture.id)) {
           seen.add(lecture.id);
           all.push(lecture);
         }
       }
-    } else {
-      console.warn("[lectures] Failed to scrape a course:", result.reason);
+    } catch (err) {
+      console.warn("[lectures] Failed to scrape course:", course.name, err);
     }
   }
+
   return all;
 }
 
@@ -39,6 +38,46 @@ async function getLecturesForCourse(
   context: BrowserContext,
   course: Course,
 ): Promise<Lecture[]> {
+  // Run sequentially to avoid opening too many concurrent pages across all courses
+  const rawItems = await scrapeCourseLectures(context, course);
+  const completionMap = await scrapeAttendanceStatus(context, course);
+
+  return rawItems.map((item) => ({
+    id: `${course.id}_lecture_${item.moduleId}`,
+    courseId: course.id,
+    courseName: course.name,
+    title: item.title,
+    url: item.href
+      ? item.href.startsWith("http")
+        ? item.href
+        : `${LEARNUS_BASE}${item.href}`
+      : course.url,
+    closesAt: parseAttendancePeriod(item.allText),
+    isCompleted: completionMap.get(normalizeTitle(item.title)) ?? false,
+    type: "lecture" as const,
+  }));
+}
+
+/**
+ * Strips VOD/video type suffixes added by professors or Moodle to lecture titles.
+ * Used to match course page titles (e.g. "Intro VOD", "Intro 동영상") against
+ * the attendance page which shows plain titles (e.g. "Intro").
+ */
+function normalizeTitle(title: string): string {
+  return title
+    .replace(/\s*(VOD|동영상|video|vod)\s*$/i, "")
+    .replace(/\s*\(.*?\)\s*$/, "")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Scrapes the list of lecture activity items from the course page.
+ */
+async function scrapeCourseLectures(
+  context: BrowserContext,
+  course: Course,
+): Promise<{ href: string; moduleId: string; title: string; allText: string }[]> {
   const page = await context.newPage();
   try {
     await page.goto(course.url, { waitUntil: "domcontentloaded" });
@@ -53,9 +92,9 @@ async function getLecturesForCourse(
     // - Title in .instancename or .activityname (may include "VOD"/"동영상" suffix set by professor)
     // - Attendance window in item.textContent: "YYYY-MM-DD HH:MM:SS ~ YYYY-MM-DD HH:MM:SS (Late/지각 : ...)"
     //   NOT in .availabilityinfo or .contentafterlink
-    // - No data-completionstate attribute on VOD items (always treated as not completed)
+    // - No data-completionstate attribute on VOD items (completion checked via attendance report)
     // - Future locked lectures have no <a> href; module ID comes from li#module-XXXX instead
-    const rawItems = await page.$$eval(
+    return await page.$$eval(
       "li.activity",
       (items, moduleTypes) =>
         items.flatMap((item) => {
@@ -80,28 +119,68 @@ async function getLecturesForCourse(
           // Attendance period is in the raw text content of the entire activity item
           const allText = item.textContent?.replace(/\s+/g, " ").trim() ?? "";
 
-          const completionEl = item.querySelector<HTMLElement>("[data-completionstate]");
-          const isCompleted = completionEl?.getAttribute("data-completionstate") === "1";
-
-          return [{ href, moduleId, title, allText, isCompleted }];
+          return [{ href, moduleId, title, allText }];
         }),
       LECTURE_MODULE_TYPES,
     );
+  } finally {
+    await page.close();
+  }
+}
 
-    return rawItems.map((item) => ({
-      id: `${course.id}_lecture_${item.moduleId}`,
-      courseId: course.id,
-      courseName: course.name,
-      title: item.title,
-      url: item.href
-        ? item.href.startsWith("http")
-          ? item.href
-          : `${LEARNUS_BASE}${item.href}`
-        : course.url,
-      closesAt: parseAttendancePeriod(item.allText),
-      isCompleted: item.isCompleted,
-      type: "lecture" as const,
-    }));
+/**
+ * Loads the per-student attendance report for a course and returns a map of
+ * normalized lecture title → isCompleted (true if status is O or ▲).
+ *
+ * URL: /report/ubcompletion/user_progress_a.php?id={courseId}
+ *
+ * Table structure (confirmed via inspection):
+ *   <td>  watch-time  <button class="track_detail" data-modid="...">View: N</button> </td>
+ *   <td class="text-center">  O | ▲ | X | &nbsp;  </td>
+ */
+async function scrapeAttendanceStatus(
+  context: BrowserContext,
+  course: Course,
+): Promise<Map<string, boolean>> {
+  const page = await context.newPage();
+  try {
+    const url = `${LEARNUS_BASE}/report/ubcompletion/user_progress_a.php?id=${course.id}`;
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+
+    const entries = await page.$$eval("button.track_detail", (buttons) =>
+      buttons.flatMap((btn) => {
+        const td = btn.closest("td");
+        if (!td) return [];
+        // Next sibling td holds the per-item attendance status
+        const statusTd = td.nextElementSibling;
+        const status = statusTd?.textContent?.trim() ?? "";
+        // Title is in the previous row's td.text-left (sibling tr, same table row)
+        const row = td.closest("tr");
+        if (!row) return [];
+        const titleTd = row.querySelector("td.text-left");
+        const rawTitle = titleTd?.textContent?.trim() ?? "";
+        if (!rawTitle) return [];
+        return [{ rawTitle, status }];
+      }),
+    );
+
+    const map = new Map<string, boolean>();
+    for (const { rawTitle, status } of entries) {
+      // Strip icon alt text and normalize
+      const title = rawTitle.replace(/^\s*\S+\s+/, "").trim(); // remove leading icon text
+      const normalized = title
+        .replace(/\s*(VOD|동영상|video|vod)\s*$/i, "")
+        .replace(/\s*\(.*?\)\s*$/, "")
+        .trim()
+        .toLowerCase();
+      // O = attended on time, ▲ = late but counted — both mean the student watched it
+      const isCompleted = status === "O" || status === "▲";
+      map.set(normalized, isCompleted);
+    }
+    return map;
+  } catch (err) {
+    console.warn(`[lectures] Failed to load attendance report for ${course.name}:`, err);
+    return new Map();
   } finally {
     await page.close();
   }
