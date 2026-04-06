@@ -1,16 +1,16 @@
-export {
-  initDb,
-  upsertAssignment,
-  upsertLecture,
-  getPendingNotifications,
-  markNotified,
-  getUpcoming,
-} from "./store.js";
 export type {
-  PendingNotification,
-  NotificationTier,
   DbAssignment,
   DbLecture,
   NewAssignment,
   NewLecture,
+  NotificationTier,
+  PendingNotification,
+} from "./store.js";
+export {
+  getPendingNotifications,
+  getUpcoming,
+  initDb,
+  markNotified,
+  upsertAssignment,
+  upsertLecture,
 } from "./store.js";

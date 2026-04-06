@@ -1,5 +1,5 @@
-import { Bot } from "grammy";
 import type { PendingNotification } from "@learnus-notifier/db";
+import { Bot } from "grammy";
 import { buildNotificationMessage, type Language } from "./messages.js";
 
 let _bot: Bot | undefined;

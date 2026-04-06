@@ -1,5 +1,3 @@
-import cron from "node-cron";
-import { openSession, getCourses, getAssignments, getLectures } from "@learnus-notifier/scraper";
 import {
   getPendingNotifications,
   initDb,
@@ -7,7 +5,9 @@ import {
   upsertAssignment,
   upsertLecture,
 } from "@learnus-notifier/db";
+import { getAssignments, getCourses, getLectures, openSession } from "@learnus-notifier/scraper";
 import { initBot, registerCommands, sendNotification } from "@learnus-notifier/telegram";
+import cron from "node-cron";
 import { config } from "./config.js";
 
 async function scrapeAndNotify(): Promise<void> {
@@ -66,7 +66,20 @@ async function scrapeAndNotify(): Promise<void> {
     const pending = await getPendingNotifications();
     console.log(`[scheduler] Sending ${pending.length} notifications.`);
 
+    // Build a set of lecture IDs that the current scrape confirmed as completed.
+    // Used as a last-resort guard: if the DB ratchet didn't catch a stale false,
+    // we skip the notification rather than fire a false alarm.
+    const completedLectureIds = new Set(
+      scrapedLectures.filter((l) => l.isCompleted).map((l) => l.id),
+    );
+
     for (const item of pending) {
+      if (item.type === "lecture" && completedLectureIds.has(item.id)) {
+        console.log(
+          `[scheduler] Skipping notification for already-completed lecture "${item.title}"`,
+        );
+        continue;
+      }
       try {
         await sendNotification(config.telegram.chatId, item, config.notification.language);
         await markNotified(item.id, item.type, item.tier);

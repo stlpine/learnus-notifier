@@ -1,8 +1,8 @@
 import { createClient } from "@libsql/client";
-import { and, eq, gt, isNotNull, isNull, lte } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";
-import { assignments, lectures } from "./schema.js";
 import type { NewAssignment, NewLecture } from "./schema.js";
+import { assignments, lectures } from "./schema.js";
 
 export type { DbAssignment, DbLecture, NewAssignment, NewLecture } from "./schema.js";
 
@@ -100,7 +100,10 @@ export async function upsertLecture(item: NewLecture): Promise<void> {
         title: item.title,
         url: item.url,
         closesAt: item.closesAt,
-        isCompleted: item.isCompleted,
+        // One-way ratchet: once completed, never revert to false.
+        // Guards against attendance report fetch failures returning an empty map,
+        // which would otherwise overwrite a known-completed status.
+        isCompleted: sql`CASE WHEN excluded.is_completed = 1 THEN 1 ELSE ${lectures.isCompleted} END`,
         updatedAt: item.updatedAt,
       },
     });

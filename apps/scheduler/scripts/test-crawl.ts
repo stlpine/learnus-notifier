@@ -4,7 +4,7 @@
  *
  * Usage: pnpm test:crawl (from monorepo root)
  */
-import { openSession, getCourses, getAssignments, getLectures } from "@learnus-notifier/scraper";
+import { getAssignments, getCourses, getLectures, openSession } from "@learnus-notifier/scraper";
 
 const username = process.env.LEARNUS_USERNAME;
 const password = process.env.LEARNUS_PASSWORD;

@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { chromium, type BrowserContext } from "playwright";
+import { type BrowserContext, chromium } from "playwright";
 
 const LEARNUS_BASE = "https://ys.learnus.org";
 const YONSEI_PORTAL_PATTERN = /yonsei\.ac\.kr/;

@@ -4,8 +4,9 @@
  *
  * Usage: pnpm --filter @learnus-notifier/scheduler run inspect-lectures
  */
-import { openSession, getCourses } from "@learnus-notifier/scraper";
+
 import * as fs from "node:fs";
+import { getCourses, openSession } from "@learnus-notifier/scraper";
 
 const username = process.env.LEARNUS_USERNAME;
 const password = process.env.LEARNUS_PASSWORD;
@@ -42,7 +43,19 @@ async function main() {
         const moduleTypeCounts: Record<string, number> = {};
         for (const act of allActivities) {
           const cls = act.classes.toLowerCase();
-          for (const t of ["vod", "xncompass", "ubcoll", "zoom", "video", "assign", "resource", "forum", "quiz", "page", "url"]) {
+          for (const t of [
+            "vod",
+            "xncompass",
+            "ubcoll",
+            "zoom",
+            "video",
+            "assign",
+            "resource",
+            "forum",
+            "quiz",
+            "page",
+            "url",
+          ]) {
             if (cls.includes(t)) {
               moduleTypeCounts[t] = (moduleTypeCounts[t] ?? 0) + 1;
             }
@@ -62,9 +75,12 @@ async function main() {
 
               const linkEl = item.querySelector<HTMLAnchorElement>("a");
               const href = linkEl?.getAttribute("href") ?? "";
-              const instancename = item.querySelector(".instancename, .activityname")?.textContent?.trim() ?? "";
-              const availabilityinfo = item.querySelector(".availabilityinfo")?.textContent?.trim() ?? "";
-              const contentafterlink = item.querySelector(".contentafterlink")?.textContent?.trim() ?? "";
+              const instancename =
+                item.querySelector(".instancename, .activityname")?.textContent?.trim() ?? "";
+              const availabilityinfo =
+                item.querySelector(".availabilityinfo")?.textContent?.trim() ?? "";
+              const contentafterlink =
+                item.querySelector(".contentafterlink")?.textContent?.trim() ?? "";
               const textinfo = item.querySelector(".text-info")?.textContent?.trim() ?? "";
 
               // Grab outerHTML of the completion element
@@ -74,17 +90,19 @@ async function main() {
               // Look for any date-like text in all descendant text
               const allText = item.textContent?.replace(/\s+/g, " ").trim() ?? "";
 
-              return [{
-                classes,
-                href,
-                instancename,
-                availabilityinfo,
-                contentafterlink,
-                textinfo,
-                completionState,
-                // First 300 chars of all text to spot date patterns
-                allText: allText.slice(0, 300),
-              }];
+              return [
+                {
+                  classes,
+                  href,
+                  instancename,
+                  availabilityinfo,
+                  contentafterlink,
+                  textinfo,
+                  completionState,
+                  // First 300 chars of all text to spot date patterns
+                  allText: allText.slice(0, 300),
+                },
+              ];
             }),
           LECTURE_MODULE_TYPES,
         );

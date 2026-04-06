@@ -71,13 +71,10 @@ export function buildUpcomingMessage(
   lang: Language,
 ): string {
   if (items.length === 0) {
-    return lang === "ko"
-      ? "✅ 다가오는 마감이 없습니다\\."
-      : "✅ No upcoming deadlines\\.";
+    return lang === "ko" ? "✅ 다가오는 마감이 없습니다\\." : "✅ No upcoming deadlines\\.";
   }
 
-  const header =
-    lang === "ko" ? "📋 *다가오는 마감 목록*" : "📋 *Upcoming Deadlines*";
+  const header = lang === "ko" ? "📋 *다가오는 마감 목록*" : "📋 *Upcoming Deadlines*";
 
   const lines = items.map((item) => {
     const label = ITEM_LABEL[item.type][lang];

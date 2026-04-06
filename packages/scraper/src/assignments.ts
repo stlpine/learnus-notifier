@@ -12,9 +12,7 @@ export async function getAssignments(
   context: BrowserContext,
   courses: Course[],
 ): Promise<Assignment[]> {
-  const results = await Promise.allSettled(
-    courses.map((c) => getAssignmentsForCourse(context, c)),
-  );
+  const results = await Promise.allSettled(courses.map((c) => getAssignmentsForCourse(context, c)));
 
   const all: Assignment[] = [];
   for (const result of results) {
@@ -44,38 +42,36 @@ async function getAssignmentsForCourse(
 
     // Extract raw row data from the assignment table.
     // page.$$eval can only return serializable values, so dates are returned as strings.
-    const rawRows = await page.$$eval(
-      "table.generaltable tbody tr, table tbody tr",
-      (rows) =>
-        rows.flatMap((row) => {
-          const cells = row.querySelectorAll("td");
-          if (cells.length < 2) return [];
+    const rawRows = await page.$$eval("table.generaltable tbody tr, table tbody tr", (rows) =>
+      rows.flatMap((row) => {
+        const cells = row.querySelectorAll("td");
+        if (cells.length < 2) return [];
 
-          const linkEl = row.querySelector<HTMLAnchorElement>('a[href*="mod/assign/view.php"]');
-          if (!linkEl) return [];
+        const linkEl = row.querySelector<HTMLAnchorElement>('a[href*="mod/assign/view.php"]');
+        if (!linkEl) return [];
 
-          const title = linkEl.textContent?.trim() ?? "";
-          const href = linkEl.getAttribute("href") ?? "";
-          const moduleMatch = href.match(/[?&]id=(\d+)/);
-          if (!moduleMatch || !title) return [];
+        const title = linkEl.textContent?.trim() ?? "";
+        const href = linkEl.getAttribute("href") ?? "";
+        const moduleMatch = href.match(/[?&]id=(\d+)/);
+        if (!moduleMatch || !title) return [];
 
-          // Column layout: [0] Week, [1] Title (with link), [2] Due date, [3] Status, [4] Grade
-          const dueDateText = cells[2]?.textContent?.trim() ?? "";
+        // Column layout: [0] Week, [1] Title (with link), [2] Due date, [3] Status, [4] Grade
+        const dueDateText = cells[2]?.textContent?.trim() ?? "";
 
-          // Submission status is in column 3
-          // "제출 완료" / "Submitted for grading" → submitted
-          // "미제출" / "No submission" → not submitted
-          // Note: "미제출" contains "제출" so we must check negatives first
-          const statusText = cells[3]?.textContent?.trim() ?? "";
-          const isSubmitted =
-            !statusText.includes("미제출") &&
-            !statusText.toLowerCase().includes("no submission") &&
-            (statusText.includes("제출") ||
-              statusText.toLowerCase().includes("submitted") ||
-              statusText.includes("완료"));
+        // Submission status is in column 3
+        // "제출 완료" / "Submitted for grading" → submitted
+        // "미제출" / "No submission" → not submitted
+        // Note: "미제출" contains "제출" so we must check negatives first
+        const statusText = cells[3]?.textContent?.trim() ?? "";
+        const isSubmitted =
+          !statusText.includes("미제출") &&
+          !statusText.toLowerCase().includes("no submission") &&
+          (statusText.includes("제출") ||
+            statusText.toLowerCase().includes("submitted") ||
+            statusText.includes("완료"));
 
-          return [{ title, href, moduleId: moduleMatch[1], dueDateText, isSubmitted }];
-        }),
+        return [{ title, href, moduleId: moduleMatch[1], dueDateText, isSubmitted }];
+      }),
     );
 
     return rawRows.map((row) => ({

@@ -1,5 +1,5 @@
-import type { Bot } from "grammy";
 import { getUpcoming } from "@learnus-notifier/db";
+import type { Bot } from "grammy";
 import { buildUpcomingMessage, buildWelcomeMessage, type Language } from "./messages.js";
 
 /**

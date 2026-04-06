@@ -4,8 +4,9 @@
  *
  * Usage: pnpm --filter @learnus-notifier/scheduler run inspect-assignments
  */
-import { openSession, getCourses } from "@learnus-notifier/scraper";
+
 import * as fs from "node:fs";
+import { getCourses, openSession } from "@learnus-notifier/scraper";
 
 const username = process.env.LEARNUS_USERNAME;
 const password = process.env.LEARNUS_PASSWORD;
@@ -31,26 +32,23 @@ async function main() {
         console.log(`URL: ${url}`);
 
         // Dump table headers
-        const headers = await page.$$eval(
-          "table.generaltable thead th, table thead th",
-          (ths) => ths.map((th) => th.textContent?.trim() ?? ""),
+        const headers = await page.$$eval("table.generaltable thead th, table thead th", (ths) =>
+          ths.map((th) => th.textContent?.trim() ?? ""),
         );
         console.log("Table headers:", headers);
 
         // Dump first 3 rows with all cell texts
-        const rows = await page.$$eval(
-          "table.generaltable tbody tr, table tbody tr",
-          (trs) =>
-            trs.slice(0, 5).map((tr) => {
-              const cells = tr.querySelectorAll("td");
-              const link = tr.querySelector<HTMLAnchorElement>('a[href*="mod/assign/view.php"]');
-              return {
-                cellCount: cells.length,
-                cells: Array.from(cells).map((td) => td.textContent?.trim() ?? ""),
-                link: link?.getAttribute("href") ?? null,
-                linkText: link?.textContent?.trim() ?? null,
-              };
-            }),
+        const rows = await page.$$eval("table.generaltable tbody tr, table tbody tr", (trs) =>
+          trs.slice(0, 5).map((tr) => {
+            const cells = tr.querySelectorAll("td");
+            const link = tr.querySelector<HTMLAnchorElement>('a[href*="mod/assign/view.php"]');
+            return {
+              cellCount: cells.length,
+              cells: Array.from(cells).map((td) => td.textContent?.trim() ?? ""),
+              link: link?.getAttribute("href") ?? null,
+              linkText: link?.textContent?.trim() ?? null,
+            };
+          }),
         );
 
         if (rows.length === 0) {

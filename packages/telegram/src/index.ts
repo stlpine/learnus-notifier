@@ -1,3 +1,3 @@
-export { initBot, getBot, sendNotification } from "./notifier.js";
 export { registerCommands } from "./bot.js";
-export { buildUpcomingMessage, buildNotificationMessage, type Language } from "./messages.js";
+export { buildNotificationMessage, buildUpcomingMessage, type Language } from "./messages.js";
+export { getBot, initBot, sendNotification } from "./notifier.js";

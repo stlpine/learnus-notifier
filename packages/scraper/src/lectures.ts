@@ -10,10 +10,7 @@ const LECTURE_MODULE_TYPES = ["vod", "xncompass", "ubcoll", "zoom", "video"];
  * Processes courses sequentially (2 pages per course: listing + attendance report).
  * Deduplicates by module ID (same lecture can appear in multiple course sections).
  */
-export async function getLectures(
-  context: BrowserContext,
-  courses: Course[],
-): Promise<Lecture[]> {
+export async function getLectures(context: BrowserContext, courses: Course[]): Promise<Lecture[]> {
   const seen = new Set<string>();
   const all: Lecture[] = [];
 
@@ -34,10 +31,7 @@ export async function getLectures(
   return all;
 }
 
-async function getLecturesForCourse(
-  context: BrowserContext,
-  course: Course,
-): Promise<Lecture[]> {
+async function getLecturesForCourse(context: BrowserContext, course: Course): Promise<Lecture[]> {
   // Run sequentially to avoid opening too many concurrent pages across all courses
   const rawItems = await scrapeCourseLectures(context, course);
   const completionMap = await scrapeAttendanceStatus(context, course);
@@ -53,22 +47,11 @@ async function getLecturesForCourse(
         : `${LEARNUS_BASE}${item.href}`
       : course.url,
     closesAt: parseAttendancePeriod(item.allText),
-    isCompleted: completionMap.get(normalizeTitle(item.title)) ?? false,
+    // Key by moduleId (data-modid on attendance report buttons) — avoids title
+    // normalization mismatches between the course page and the attendance report.
+    isCompleted: completionMap.get(item.moduleId) ?? false,
     type: "lecture" as const,
   }));
-}
-
-/**
- * Strips VOD/video type suffixes added by professors or Moodle to lecture titles.
- * Used to match course page titles (e.g. "Intro VOD", "Intro 동영상") against
- * the attendance page which shows plain titles (e.g. "Intro").
- */
-function normalizeTitle(title: string): string {
-  return title
-    .replace(/\s*(VOD|동영상|video|vod)\s*$/i, "")
-    .replace(/\s*\(.*?\)\s*$/, "")
-    .trim()
-    .toLowerCase();
 }
 
 /**
@@ -110,8 +93,7 @@ async function scrapeCourseLectures(
           const moduleId = moduleIdFromHref ?? (moduleIdFromEl || null);
           if (!moduleId) return [];
 
-          const rawTitle =
-            item.querySelector(".instancename, .activityname")?.textContent ?? "";
+          const rawTitle = item.querySelector(".instancename, .activityname")?.textContent ?? "";
           // Strip Moodle-appended module type label in parens (e.g. "(VOD)")
           const title = rawTitle.replace(/\s*\(.*?\)\s*$/, "").trim();
           if (!title) return [];
@@ -130,7 +112,10 @@ async function scrapeCourseLectures(
 
 /**
  * Loads the per-student attendance report for a course and returns a map of
- * normalized lecture title → isCompleted (true if status is O or ▲).
+ * moduleId (data-modid) → isCompleted (true if status is O or ▲).
+ *
+ * Keying by moduleId avoids title-normalization mismatches between the course
+ * page and the attendance report page.
  *
  * URL: /report/ubcompletion/user_progress_a.php?id={courseId}
  *
@@ -149,33 +134,21 @@ async function scrapeAttendanceStatus(
 
     const entries = await page.$$eval("button.track_detail", (buttons) =>
       buttons.flatMap((btn) => {
+        const modId = btn.getAttribute("data-modid");
+        if (!modId) return [];
         const td = btn.closest("td");
         if (!td) return [];
         // Next sibling td holds the per-item attendance status
         const statusTd = td.nextElementSibling;
         const status = statusTd?.textContent?.trim() ?? "";
-        // Title is in the previous row's td.text-left (sibling tr, same table row)
-        const row = td.closest("tr");
-        if (!row) return [];
-        const titleTd = row.querySelector("td.text-left");
-        const rawTitle = titleTd?.textContent?.trim() ?? "";
-        if (!rawTitle) return [];
-        return [{ rawTitle, status }];
+        return [{ modId, status }];
       }),
     );
 
     const map = new Map<string, boolean>();
-    for (const { rawTitle, status } of entries) {
-      // Strip icon alt text and normalize
-      const title = rawTitle.replace(/^\s*\S+\s+/, "").trim(); // remove leading icon text
-      const normalized = title
-        .replace(/\s*(VOD|동영상|video|vod)\s*$/i, "")
-        .replace(/\s*\(.*?\)\s*$/, "")
-        .trim()
-        .toLowerCase();
+    for (const { modId, status } of entries) {
       // O = attended on time, ▲ = late but counted — both mean the student watched it
-      const isCompleted = status === "O" || status === "▲";
-      map.set(normalized, isCompleted);
+      map.set(modId, status === "O" || status === "▲");
     }
     return map;
   } catch (err) {
@@ -201,7 +174,14 @@ function parseAttendancePeriod(text: string): Date | null {
   );
   if (isoRangeMatch) {
     const [, year, month, day, h, m, s] = isoRangeMatch;
-    return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), parseInt(h, 10), parseInt(m, 10), parseInt(s, 10));
+    return new Date(
+      parseInt(year, 10),
+      parseInt(month, 10) - 1,
+      parseInt(day, 10),
+      parseInt(h, 10),
+      parseInt(m, 10),
+      parseInt(s, 10),
+    );
   }
 
   // Fallback: older format "YYYY-MM-DD ~ YYYY-MM-DD HH:MM"

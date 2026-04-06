@@ -4,7 +4,7 @@
  *
  * Usage: pnpm --filter @learnus-notifier/scheduler run inspect-vod-page
  */
-import { openSession, getCourses } from "@learnus-notifier/scraper";
+import { getCourses, openSession } from "@learnus-notifier/scraper";
 
 const username = process.env.LEARNUS_USERNAME;
 const password = process.env.LEARNUS_PASSWORD;
@@ -88,7 +88,7 @@ async function main() {
           await attendancePage.goto(fullUrl, { waitUntil: "domcontentloaded" });
 
           const bodyText = await attendancePage.evaluate(() =>
-            (document.body?.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 2000)
+            (document.body?.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 2000),
           );
           console.log(`  Attendance page URL: ${attendancePage.url()}`);
           console.log(`  Attendance page body (2000 chars): "${bodyText}"`);
@@ -98,7 +98,9 @@ async function main() {
           const safeName = course.name.replace(/[^a-zA-Z0-9]/g, "_").slice(0, 30);
           const fs = await import("node:fs");
           fs.writeFileSync(`./data/inspect-attendance-${course.id}-${safeName}.html`, html);
-          console.log(`  Full HTML saved to ./data/inspect-attendance-${course.id}-${safeName}.html`);
+          console.log(
+            `  Full HTML saved to ./data/inspect-attendance-${course.id}-${safeName}.html`,
+          );
         }
       } finally {
         await attendancePage.close();

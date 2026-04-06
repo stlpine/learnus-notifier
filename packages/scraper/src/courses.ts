@@ -22,13 +22,11 @@ export async function getCourses(context: BrowserContext): Promise<Course[]> {
       throw new Error("[courses] Session invalid — redirected to login page");
     }
 
-    const links = await page.$$eval(
-      'a[href*="/course/view.php?id="]',
-      (els) =>
-        els.map((el) => ({
-          href: el.getAttribute("href") ?? "",
-          text: el.textContent?.trim() ?? "",
-        })),
+    const links = await page.$$eval('a[href*="/course/view.php?id="]', (els) =>
+      els.map((el) => ({
+        href: el.getAttribute("href") ?? "",
+        text: el.textContent?.trim() ?? "",
+      })),
     );
 
     const courses: Course[] = [];
