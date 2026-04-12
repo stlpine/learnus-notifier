@@ -36,6 +36,25 @@ async function getLecturesForCourse(context: BrowserContext, course: Course): Pr
   const rawItems = await scrapeCourseLectures(context, course);
   const completionMap = await scrapeAttendanceStatus(context, course);
 
+  console.log(
+    `[lectures] ${course.name}: scraped ${rawItems.length} items, ` +
+      `attendance map has ${completionMap.size} entries`,
+  );
+  console.log(
+    `[lectures] ${course.name}: course page moduleIds =`,
+    rawItems.map((i) => i.moduleId),
+  );
+  console.log(
+    `[lectures] ${course.name}: attendance report modIds =`,
+    [...completionMap.keys()],
+  );
+  for (const item of rawItems) {
+    const status = completionMap.get(item.moduleId);
+    console.log(
+      `[lectures] "${item.title}" moduleId=${item.moduleId} → completionMap lookup: ${status} (isCompleted=${status ?? false})`,
+    );
+  }
+
   return rawItems.map((item) => ({
     id: `${course.id}_lecture_${item.moduleId}`,
     courseId: course.id,
@@ -141,12 +160,22 @@ async function scrapeAttendanceStatus(
         // Next sibling td holds the per-item attendance status
         const statusTd = td.nextElementSibling;
         const status = statusTd?.textContent?.trim() ?? "";
-        return [{ modId, status }];
+        // Capture sibling chain for debug: dump text of all sibling tds
+        const siblingTexts: string[] = [];
+        let sib = td.nextElementSibling;
+        while (sib) {
+          siblingTexts.push(sib.textContent?.trim() ?? "(empty)");
+          sib = sib.nextElementSibling;
+        }
+        return [{ modId, status, siblingTexts }];
       }),
     );
 
     const map = new Map<string, boolean>();
-    for (const { modId, status } of entries) {
+    for (const { modId, status, siblingTexts } of entries) {
+      console.log(
+        `[lectures] attendance report: modId=${modId} status="${status}" siblings=[${siblingTexts.map((s) => `"${s}"`).join(", ")}]`,
+      );
       // O = attended on time, ▲ = late but counted — both mean the student watched it
       map.set(modId, status === "O" || status === "▲");
     }
