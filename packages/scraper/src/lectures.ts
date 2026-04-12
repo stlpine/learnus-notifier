@@ -36,41 +36,27 @@ async function getLecturesForCourse(context: BrowserContext, course: Course): Pr
   const rawItems = await scrapeCourseLectures(context, course);
   const completionMap = await scrapeAttendanceStatus(context, course);
 
-  console.log(
-    `[lectures] ${course.name}: scraped ${rawItems.length} items, ` +
-      `attendance map has ${completionMap.size} entries`,
-  );
-  console.log(
-    `[lectures] ${course.name}: course page moduleIds =`,
-    rawItems.map((i) => i.moduleId),
-  );
-  console.log(
-    `[lectures] ${course.name}: attendance report modIds =`,
-    [...completionMap.keys()],
-  );
-  for (const item of rawItems) {
-    const status = completionMap.get(item.moduleId);
-    console.log(
-      `[lectures] "${item.title}" moduleId=${item.moduleId} → completionMap lookup: ${status} (isCompleted=${status ?? false})`,
-    );
-  }
-
-  return rawItems.map((item) => ({
-    id: `${course.id}_lecture_${item.moduleId}`,
-    courseId: course.id,
-    courseName: course.name,
-    title: item.title,
-    url: item.href
-      ? item.href.startsWith("http")
-        ? item.href
-        : `${LEARNUS_BASE}${item.href}`
-      : course.url,
-    closesAt: parseAttendancePeriod(item.allText),
-    // Key by moduleId (data-modid on attendance report buttons) — avoids title
-    // normalization mismatches between the course page and the attendance report.
-    isCompleted: completionMap.get(item.moduleId) ?? false,
-    type: "lecture" as const,
-  }));
+  return rawItems.map((item) => {
+    // Primary lookup: cmid from course page href — matches the cmid-keyed entries
+    // added by scrapeAttendanceStatus from row links.
+    // Fallback: normalized title — covers cases where the row has no link.
+    const isCompleted =
+      completionMap.get(item.moduleId) ?? completionMap.get(normalizeTitle(item.title)) ?? false;
+    return {
+      id: `${course.id}_lecture_${item.moduleId}`,
+      courseId: course.id,
+      courseName: course.name,
+      title: item.title,
+      url: item.href
+        ? item.href.startsWith("http")
+          ? item.href
+          : `${LEARNUS_BASE}${item.href}`
+        : course.url,
+      closesAt: parseAttendancePeriod(item.allText),
+      isCompleted,
+      type: "lecture" as const,
+    };
+  });
 }
 
 /**
@@ -130,11 +116,17 @@ async function scrapeCourseLectures(
 }
 
 /**
- * Loads the per-student attendance report for a course and returns a map of
- * moduleId (data-modid) → isCompleted (true if status is O or ▲).
+ * Loads the per-student attendance report for a course and returns a completion map.
  *
- * Keying by moduleId avoids title-normalization mismatches between the course
- * page and the attendance report page.
+ * The map is keyed by multiple identifiers so that callers can look up by whichever
+ * ID they have available:
+ *   - cmid extracted from any row link href (?id=CMID) — matches the course page moduleId
+ *   - normalized title — fallback when no link is present in the row
+ *   - data-modid — the VOD instance ID (different from cmid; kept for completeness)
+ *
+ * Root cause of the previous false alarms: data-modid (VOD instance ID, e.g. 419067)
+ * does NOT match the cmid from the course page href (e.g. 4325035). Keying by the
+ * cmid from row links fixes the mismatch.
  *
  * URL: /report/ubcompletion/user_progress_a.php?id={courseId}
  *
@@ -155,29 +147,37 @@ async function scrapeAttendanceStatus(
       buttons.flatMap((btn) => {
         const modId = btn.getAttribute("data-modid");
         if (!modId) return [];
+        const row = btn.closest("tr");
+        if (!row) return [];
+
+        // Extract the cmid from any link in the row — this matches the ?id= param
+        // on the course page and is the correct key for the completionMap lookup.
+        const rowLink = row.querySelector<HTMLAnchorElement>("a[href]");
+        const cmId = rowLink?.getAttribute("href")?.match(/[?&]id=(\d+)/)?.[1] ?? null;
+
+        // Extract row title for normalized-title fallback matching.
+        const firstTd = row.querySelector("td");
+        const rowTitle = firstTd?.textContent?.trim() ?? "";
+
+        // Status cell: next sibling td of the td containing the button.
         const td = btn.closest("td");
-        if (!td) return [];
-        // Next sibling td holds the per-item attendance status
-        const statusTd = td.nextElementSibling;
+        const statusTd = td?.nextElementSibling;
         const status = statusTd?.textContent?.trim() ?? "";
-        // Capture sibling chain for debug: dump text of all sibling tds
-        const siblingTexts: string[] = [];
-        let sib = td.nextElementSibling;
-        while (sib) {
-          siblingTexts.push(sib.textContent?.trim() ?? "(empty)");
-          sib = sib.nextElementSibling;
-        }
-        return [{ modId, status, siblingTexts }];
+
+        return [{ modId, cmId, rowTitle, status }];
       }),
     );
 
     const map = new Map<string, boolean>();
-    for (const { modId, status, siblingTexts } of entries) {
-      console.log(
-        `[lectures] attendance report: modId=${modId} status="${status}" siblings=[${siblingTexts.map((s) => `"${s}"`).join(", ")}]`,
-      );
-      // O = attended on time, ▲ = late but counted — both mean the student watched it
-      map.set(modId, status === "O" || status === "▲");
+    for (const { modId, cmId, rowTitle, status } of entries) {
+      const isCompleted = status === "O" || status === "▲";
+      // Key by cmId (primary — matches course page moduleId)
+      if (cmId) map.set(cmId, isCompleted);
+      // Key by normalized title (fallback)
+      const normalized = normalizeTitle(rowTitle);
+      if (normalized) map.set(normalized, isCompleted);
+      // Key by modId (VOD instance ID — kept for completeness, unlikely to match cmid)
+      map.set(modId, isCompleted);
     }
     return map;
   } catch (err) {
@@ -186,6 +186,19 @@ async function scrapeAttendanceStatus(
   } finally {
     await page.close();
   }
+}
+
+/**
+ * Normalizes a lecture title for fallback matching between the course page and
+ * the attendance report. Strips parenthetical suffixes (e.g. "(VOD)"), lowercases,
+ * and collapses whitespace.
+ */
+function normalizeTitle(title: string): string {
+  return title
+    .replace(/\s*\(.*?\)\s*/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
