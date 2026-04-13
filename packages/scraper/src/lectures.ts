@@ -37,15 +37,7 @@ async function getLecturesForCourse(context: BrowserContext, course: Course): Pr
   const completionMap = await scrapeAttendanceStatus(context, course);
 
   return rawItems.map((item) => {
-    // Lookup by normalized title (primary) then modId (secondary).
-    // cmid-based lookup is not used — attendance report rows have no links.
-    const byTitle = completionMap.get(normalizeTitle(item.title));
-    const isCompleted = byTitle ?? false;
-    if (byTitle === undefined) {
-      console.log(
-        `[lectures] No match in completionMap for title="${normalizeTitle(item.title)}" (map size=${completionMap.size})`,
-      );
-    }
+    const isCompleted = completionMap.get(normalizeTitle(item.title)) ?? false;
     return {
       id: `${course.id}_lecture_${item.moduleId}`,
       courseId: course.id,
@@ -122,8 +114,9 @@ async function scrapeCourseLectures(
 /**
  * Loads the per-student attendance report for a course and returns a completion map.
  *
- * The map is keyed by normalized title (primary) and data-modid (secondary).
- * Attendance report rows contain no links, so cmid-based keying is not possible.
+ * The map is keyed by normalized title.
+ * Attendance report rows contain no links and data-modid does not match the course
+ * page moduleId, so title-based matching is the only viable approach.
  *
  * Key finding: rows for lectures with an open attendance window (deadline not yet passed)
  * do NOT render button.track_detail. Anchoring on that button misses any lecture whose
@@ -133,11 +126,14 @@ async function scrapeCourseLectures(
  * URL: /report/ubcompletion/user_progress_a.php?id={courseId}
  *
  * Table structure (confirmed via inspection):
- *   <td>  title  </td>
- *   ...
- *   <td>  watch-time  <button class="track_detail" data-modid="...">View: N</button> </td>  (absent for open-window rows)
- *   <td class="text-center">  O | ▲ | X  </td>
+ *   <td class="text-center" rowspan="N">  week number  </td>  ← first row of each week group only
+ *   <td class="text-left">  <img> lecture title  </td>
+ *   <td class="text-center">  total watch time  </td>
+ *   <td class="text-center">  session time  <button class="track_detail" data-modid="..."> </button> </td>  (absent for open-window rows)
+ *   <td class="text-center">  O | ▲ | X  </td>               ← individual lecture status
+ *   <td class="text-center" rowspan="N">  O | ▲ | X  </td>  ← week group status, first row only
  *
+ * The week-number td (tds[0]) uses rowspan and must NOT be used as the title source.
  * Rows with an open attendance window do NOT have button.track_detail, so we scan
  * all tr elements for recognizable status cells instead of anchoring on the button.
  */
@@ -149,16 +145,6 @@ async function scrapeAttendanceStatus(
   try {
     const url = `${LEARNUS_BASE}/report/ubcompletion/user_progress_a.php?id=${course.id}`;
     await page.goto(url, { waitUntil: "domcontentloaded" });
-
-    // Debug: dump any row whose text contains "GTA_4_8" to see its raw structure
-    const debugRows = await page.$$eval("tr", (rows) =>
-      rows
-        .filter((r) => r.textContent?.includes("GTA_4_8"))
-        .map((r) => r.outerHTML.replace(/\s+/g, " ").slice(0, 600)),
-    );
-    for (const html of debugRows) {
-      console.log(`[lectures] DEBUG GTA_4_8 row: ${html}`);
-    }
 
     const entries = await page.$$eval("tr", (rows) =>
       rows.flatMap((row) => {
@@ -178,31 +164,23 @@ async function scrapeAttendanceStatus(
 
         const status = statusTd.textContent?.trim() ?? "";
 
-        // modId from button.track_detail (only present for closed-window rows)
-        const btn = row.querySelector<HTMLButtonElement>("button.track_detail");
-        const modId = btn?.getAttribute("data-modid") ?? null;
-
-        // Title from first td, stripping any nested button text (e.g. "View: N")
-        const firstTdClone = tds[0].cloneNode(true) as Element;
-        for (const el of Array.from(firstTdClone.querySelectorAll("button"))) el.remove();
-        const rowTitle = firstTdClone.textContent?.trim() ?? "";
+        // Title from td.text-left (confirmed class for lecture name cells).
+        // tds[0] is often a rowspan week-number cell — do not use it for the title.
+        const titleTd = tds.find((td) => td.classList.contains("text-left")) ?? tds[0];
+        const titleTdClone = titleTd.cloneNode(true) as Element;
+        for (const el of Array.from(titleTdClone.querySelectorAll("button"))) el.remove();
+        const rowTitle = titleTdClone.textContent?.trim() ?? "";
         if (!rowTitle) return [];
 
-        return [{ modId, rowTitle, status }];
+        return [{ rowTitle, status }];
       }),
     );
 
-    console.log(`[lectures] Attendance report for ${course.name}: ${entries.length} entries`);
     const map = new Map<string, boolean>();
-    for (const { modId, rowTitle, status } of entries) {
+    for (const { rowTitle, status } of entries) {
       const isCompleted = status === "O" || status === "▲";
-      const statusCodes = [...status].map((c) => c.codePointAt(0)?.toString(16)).join(",");
-      console.log(
-        `[lectures]   modId=${modId ?? "null"} status="${status}"(U+${statusCodes}) completed=${isCompleted} title="${rowTitle.slice(0, 60)}"`,
-      );
       const normalized = normalizeTitle(rowTitle);
       if (normalized) map.set(normalized, isCompleted);
-      if (modId) map.set(modId, isCompleted);
     }
     return map;
   } catch (err) {
