@@ -40,8 +40,14 @@ async function getLecturesForCourse(context: BrowserContext, course: Course): Pr
     // Primary lookup: cmid from course page href — matches the cmid-keyed entries
     // added by scrapeAttendanceStatus from row links.
     // Fallback: normalized title — covers cases where the row has no link.
-    const isCompleted =
-      completionMap.get(item.moduleId) ?? completionMap.get(normalizeTitle(item.title)) ?? false;
+    const byModuleId = completionMap.get(item.moduleId);
+    const byTitle = completionMap.get(normalizeTitle(item.title));
+    const isCompleted = byModuleId ?? byTitle ?? false;
+    if (byModuleId === undefined && byTitle === undefined) {
+      console.log(
+        `[lectures] No match in completionMap for moduleId=${item.moduleId} title="${normalizeTitle(item.title)}" (map size=${completionMap.size})`,
+      );
+    }
     return {
       id: `${course.id}_lecture_${item.moduleId}`,
       courseId: course.id,
@@ -168,9 +174,14 @@ async function scrapeAttendanceStatus(
       }),
     );
 
+    console.log(`[lectures] Attendance report for ${course.name}: ${entries.length} entries`);
     const map = new Map<string, boolean>();
     for (const { modId, cmId, rowTitle, status } of entries) {
       const isCompleted = status === "O" || status === "▲";
+      const statusCodes = [...status].map((c) => c.codePointAt(0)?.toString(16)).join(",");
+      console.log(
+        `[lectures]   modId=${modId} cmId=${cmId ?? "null"} status="${status}"(U+${statusCodes}) completed=${isCompleted} title="${rowTitle.slice(0, 60)}"`,
+      );
       // Key by cmId (primary — matches course page moduleId)
       if (cmId) map.set(cmId, isCompleted);
       // Key by normalized title (fallback)
