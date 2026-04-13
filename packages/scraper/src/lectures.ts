@@ -174,7 +174,7 @@ async function scrapeAttendanceStatus(
 
         // Title from first td, stripping any nested button text (e.g. "View: N")
         const firstTdClone = tds[0].cloneNode(true) as Element;
-        for (const el of firstTdClone.querySelectorAll("button")) el.remove();
+        for (const el of Array.from(firstTdClone.querySelectorAll("button"))) el.remove();
         const rowTitle = firstTdClone.textContent?.trim() ?? "";
         if (!rowTitle) return [];
 
