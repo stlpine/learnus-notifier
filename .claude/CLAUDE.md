@@ -35,7 +35,7 @@ packages/
 | `packages/scraper/src/auth.ts` | ✅ Verified — fields: `loginId`, `loginPasswd`, submit: `#loginBtn` |
 | `packages/scraper/src/courses.ts` | ✅ Verified — URL: `/local/ubion/user/index.php`, selector: `a[href*="/course/view.php?id="]` |
 | `packages/scraper/src/assignments.ts` | ✅ Verified — column layout: [0] Week, [1] Title, [2] Due date (`YYYY-MM-DD HH:MM`), [3] Status |
-| `packages/scraper/src/lectures.ts` | ✅ Verified — class: `modtype_vod`, date in `item.textContent`: `YYYY-MM-DD HH:MM:SS ~ YYYY-MM-DD HH:MM:SS`; completion from `/report/ubcompletion/user_progress_a.php?id={courseId}` (O/▲ = completed) |
+| `packages/scraper/src/lectures.ts` | ✅ Verified — class: `modtype_vod`, date in `item.textContent`: `YYYY-MM-DD HH:MM:SS ~ YYYY-MM-DD HH:MM:SS`; completion from `/report/ubcompletion/user_progress_a.php?id={courseId}`; attendance table: `td.text-left` = title, `td.text-center` with O/▲/X = status; `tds[0]` is a rowspan week-number cell (do not use for title); rows with open attendance window have no `button.track_detail`; completion matched by normalized title only (data-modid ≠ course page moduleId) |
 
 ## Deployment
 
