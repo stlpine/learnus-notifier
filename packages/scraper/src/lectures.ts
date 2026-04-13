@@ -150,6 +150,16 @@ async function scrapeAttendanceStatus(
     const url = `${LEARNUS_BASE}/report/ubcompletion/user_progress_a.php?id=${course.id}`;
     await page.goto(url, { waitUntil: "domcontentloaded" });
 
+    // Debug: dump any row whose text contains "GTA_4_8" to see its raw structure
+    const debugRows = await page.$$eval("tr", (rows) =>
+      rows
+        .filter((r) => r.textContent?.includes("GTA_4_8"))
+        .map((r) => r.outerHTML.replace(/\s+/g, " ").slice(0, 600)),
+    );
+    for (const html of debugRows) {
+      console.log(`[lectures] DEBUG GTA_4_8 row: ${html}`);
+    }
+
     const entries = await page.$$eval("tr", (rows) =>
       rows.flatMap((row) => {
         const tds = Array.from(row.querySelectorAll("td"));
