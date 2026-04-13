@@ -37,15 +37,13 @@ async function getLecturesForCourse(context: BrowserContext, course: Course): Pr
   const completionMap = await scrapeAttendanceStatus(context, course);
 
   return rawItems.map((item) => {
-    // Primary lookup: cmid from course page href — matches the cmid-keyed entries
-    // added by scrapeAttendanceStatus from row links.
-    // Fallback: normalized title — covers cases where the row has no link.
-    const byModuleId = completionMap.get(item.moduleId);
+    // Lookup by normalized title (primary) then modId (secondary).
+    // cmid-based lookup is not used — attendance report rows have no links.
     const byTitle = completionMap.get(normalizeTitle(item.title));
-    const isCompleted = byModuleId ?? byTitle ?? false;
-    if (byModuleId === undefined && byTitle === undefined) {
+    const isCompleted = byTitle ?? false;
+    if (byTitle === undefined) {
       console.log(
-        `[lectures] No match in completionMap for moduleId=${item.moduleId} title="${normalizeTitle(item.title)}" (map size=${completionMap.size})`,
+        `[lectures] No match in completionMap for title="${normalizeTitle(item.title)}" (map size=${completionMap.size})`,
       );
     }
     return {
@@ -124,21 +122,24 @@ async function scrapeCourseLectures(
 /**
  * Loads the per-student attendance report for a course and returns a completion map.
  *
- * The map is keyed by multiple identifiers so that callers can look up by whichever
- * ID they have available:
- *   - cmid extracted from any row link href (?id=CMID) — matches the course page moduleId
- *   - normalized title — fallback when no link is present in the row
- *   - data-modid — the VOD instance ID (different from cmid; kept for completeness)
+ * The map is keyed by normalized title (primary) and data-modid (secondary).
+ * Attendance report rows contain no links, so cmid-based keying is not possible.
  *
- * Root cause of the previous false alarms: data-modid (VOD instance ID, e.g. 419067)
- * does NOT match the cmid from the course page href (e.g. 4325035). Keying by the
- * cmid from row links fixes the mismatch.
+ * Key finding: rows for lectures with an open attendance window (deadline not yet passed)
+ * do NOT render button.track_detail. Anchoring on that button misses any lecture whose
+ * deadline is in the future, causing false-alarm notifications. We therefore scan all
+ * tr elements for recognizable status cells instead.
  *
  * URL: /report/ubcompletion/user_progress_a.php?id={courseId}
  *
  * Table structure (confirmed via inspection):
- *   <td>  watch-time  <button class="track_detail" data-modid="...">View: N</button> </td>
- *   <td class="text-center">  O | ▲ | X | &nbsp;  </td>
+ *   <td>  title  </td>
+ *   ...
+ *   <td>  watch-time  <button class="track_detail" data-modid="...">View: N</button> </td>  (absent for open-window rows)
+ *   <td class="text-center">  O | ▲ | X  </td>
+ *
+ * Rows with an open attendance window do NOT have button.track_detail, so we scan
+ * all tr elements for recognizable status cells instead of anchoring on the button.
  */
 async function scrapeAttendanceStatus(
   context: BrowserContext,
@@ -149,46 +150,49 @@ async function scrapeAttendanceStatus(
     const url = `${LEARNUS_BASE}/report/ubcompletion/user_progress_a.php?id=${course.id}`;
     await page.goto(url, { waitUntil: "domcontentloaded" });
 
-    const entries = await page.$$eval("button.track_detail", (buttons) =>
-      buttons.flatMap((btn) => {
-        const modId = btn.getAttribute("data-modid");
-        if (!modId) return [];
-        const row = btn.closest("tr");
-        if (!row) return [];
+    const entries = await page.$$eval("tr", (rows) =>
+      rows.flatMap((row) => {
+        const tds = Array.from(row.querySelectorAll("td"));
+        if (tds.length < 2) return []; // header rows use <th>, skip empties
 
-        // Extract the cmid from any link in the row — this matches the ?id= param
-        // on the course page and is the correct key for the completionMap lookup.
-        const rowLink = row.querySelector<HTMLAnchorElement>("a[href]");
-        const cmId = rowLink?.getAttribute("href")?.match(/[?&]id=(\d+)/)?.[1] ?? null;
+        // Identify the status cell: td.text-center containing a known status char,
+        // or fall back to any td whose trimmed text is exactly O / ▲ / X.
+        const knownStatuses = new Set(["O", "▲", "X"]);
+        const statusTd =
+          tds.find(
+            (td) =>
+              td.classList.contains("text-center") &&
+              knownStatuses.has(td.textContent?.trim() ?? ""),
+          ) ?? tds.find((td) => knownStatuses.has(td.textContent?.trim() ?? ""));
+        if (!statusTd) return []; // no recognizable status — not a lecture row
 
-        // Extract row title for normalized-title fallback matching.
-        const firstTd = row.querySelector("td");
-        const rowTitle = firstTd?.textContent?.trim() ?? "";
+        const status = statusTd.textContent?.trim() ?? "";
 
-        // Status cell: next sibling td of the td containing the button.
-        const td = btn.closest("td");
-        const statusTd = td?.nextElementSibling;
-        const status = statusTd?.textContent?.trim() ?? "";
+        // modId from button.track_detail (only present for closed-window rows)
+        const btn = row.querySelector<HTMLButtonElement>("button.track_detail");
+        const modId = btn?.getAttribute("data-modid") ?? null;
 
-        return [{ modId, cmId, rowTitle, status }];
+        // Title from first td, stripping any nested button text (e.g. "View: N")
+        const firstTdClone = tds[0].cloneNode(true) as Element;
+        for (const el of firstTdClone.querySelectorAll("button")) el.remove();
+        const rowTitle = firstTdClone.textContent?.trim() ?? "";
+        if (!rowTitle) return [];
+
+        return [{ modId, rowTitle, status }];
       }),
     );
 
     console.log(`[lectures] Attendance report for ${course.name}: ${entries.length} entries`);
     const map = new Map<string, boolean>();
-    for (const { modId, cmId, rowTitle, status } of entries) {
+    for (const { modId, rowTitle, status } of entries) {
       const isCompleted = status === "O" || status === "▲";
       const statusCodes = [...status].map((c) => c.codePointAt(0)?.toString(16)).join(",");
       console.log(
-        `[lectures]   modId=${modId} cmId=${cmId ?? "null"} status="${status}"(U+${statusCodes}) completed=${isCompleted} title="${rowTitle.slice(0, 60)}"`,
+        `[lectures]   modId=${modId ?? "null"} status="${status}"(U+${statusCodes}) completed=${isCompleted} title="${rowTitle.slice(0, 60)}"`,
       );
-      // Key by cmId (primary — matches course page moduleId)
-      if (cmId) map.set(cmId, isCompleted);
-      // Key by normalized title (fallback)
       const normalized = normalizeTitle(rowTitle);
       if (normalized) map.set(normalized, isCompleted);
-      // Key by modId (VOD instance ID — kept for completeness, unlikely to match cmid)
-      map.set(modId, isCompleted);
+      if (modId) map.set(modId, isCompleted);
     }
     return map;
   } catch (err) {
@@ -206,7 +210,8 @@ async function scrapeAttendanceStatus(
  */
 function normalizeTitle(title: string): string {
   return title
-    .replace(/\s*\(.*?\)\s*/g, "")
+    .replace(/\s*\(.*?\)\s*/g, "") // strip "(VOD)" etc.
+    .replace(/\s+(동영상|vod|video)\s*$/i, "") // strip bare type labels not in parens
     .toLowerCase()
     .replace(/\s+/g, " ")
     .trim();
