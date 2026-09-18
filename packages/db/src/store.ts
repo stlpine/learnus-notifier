@@ -1,5 +1,5 @@
 import { createClient } from "@libsql/client";
-import { and, eq, gt, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gt, isNotNull, isNull, lte, notInArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";
 import type { NewAssignment, NewLecture } from "./schema.js";
 import { assignments, lectures } from "./schema.js";
@@ -107,6 +107,22 @@ export async function upsertLecture(item: NewLecture): Promise<void> {
         updatedAt: item.updatedAt,
       },
     });
+}
+
+/**
+ * Deletes assignments and lectures belonging to courses not in `activeCourseIds`
+ * (e.g. dropped courses). No-op on an empty list so a failed scrape can't wipe the DB.
+ */
+export async function pruneInactiveCourses(
+  activeCourseIds: string[],
+): Promise<{ assignments: number; lectures: number }> {
+  if (activeCourseIds.length === 0) return { assignments: 0, lectures: 0 };
+  const db = getDb();
+  const [a, l] = await Promise.all([
+    db.delete(assignments).where(notInArray(assignments.courseId, activeCourseIds)),
+    db.delete(lectures).where(notInArray(lectures.courseId, activeCourseIds)),
+  ]);
+  return { assignments: a.rowsAffected, lectures: l.rowsAffected };
 }
 
 export async function getPendingNotifications(): Promise<PendingNotification[]> {

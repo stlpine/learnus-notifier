@@ -11,6 +11,7 @@ export {
   getUpcoming,
   initDb,
   markNotified,
+  pruneInactiveCourses,
   upsertAssignment,
   upsertLecture,
 } from "./store.js";

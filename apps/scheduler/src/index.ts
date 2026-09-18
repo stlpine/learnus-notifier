@@ -2,6 +2,7 @@ import {
   getPendingNotifications,
   initDb,
   markNotified,
+  pruneInactiveCourses,
   upsertAssignment,
   upsertLecture,
 } from "@learnus-notifier/db";
@@ -62,6 +63,13 @@ async function scrapeAndNotify(): Promise<void> {
         }),
       ),
     ]);
+
+    const pruned = await pruneInactiveCourses(courses.map((c) => c.id));
+    if (pruned.assignments > 0 || pruned.lectures > 0) {
+      console.log(
+        `[scheduler] Pruned ${pruned.assignments} assignments, ${pruned.lectures} lectures from dropped courses.`,
+      );
+    }
 
     const pending = await getPendingNotifications();
     console.log(`[scheduler] Sending ${pending.length} notifications.`);
